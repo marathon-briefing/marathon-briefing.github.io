@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>豆子帳務系統</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230B7E8C'/%3E%3Cpath d='M10 21l1.4-5.2A2 2 0 0 1 13.3 14h5.4a2 2 0 0 1 1.9 1.4L22 21' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='22' r='1.6' fill='%23fff'/%3E%3Ccircle cx='20' cy='22' r='1.6' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#F1F4F6; --card:#FFFFFF; --line:#E3E9EE;
+  --ink:#18242E; --ink2:#5B6B78; --ink3:#98A6B1;
+  --brand:#0B7E8C; --brand-strong:#096A76; --brand-soft:#E0F1F3;
+  --inc:#0E9E6B; --inc-strong:#0B8157; --inc-soft:#E1F5EC;
+  --out:#DE5334; --out-strong:#C04326; --out-soft:#FCEAE4;
+  --shadow:0 1px 2px rgba(23,36,46,.05);
+  --shadow-lg:0 12px 32px rgba(23,36,46,.16);
+  --r:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif;background:#E6EBEF;color:var(--ink);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.app{max-width:480px;margin:0 auto;min-height:100dvh;background:var(--bg);position:relative;box-shadow:0 0 40px rgba(23,36,46,.09)}
+.views{padding-bottom:104px}
+.view{display:none}
+.view.active{display:block}
+.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.hidden{display:none!important}
+
+/* 頁頭 */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 16px 4px}
+.hdr h1{font-size:19px;font-weight:700;letter-spacing:.2px}
+.hdr .sub{font-size:12.5px;color:var(--ink3);margin-top:1px}
+.iconbtn{width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--line);background:var(--card);border-radius:12px;color:var(--ink2);cursor:pointer;flex:none}
+.iconbtn:active{background:#F4F7F9}
+
+/* 主視覺卡 */
+.hero{margin:12px 16px 0;background:linear-gradient(150deg,#0E8796,#0A6B78);border-radius:18px;padding:20px 20px 18px;color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 20px rgba(11,110,122,.25)}
+.hero .hl{font-size:13px;opacity:.88;display:flex;align-items:center;gap:6px}
+.hero .big{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;margin:5px 0 1px;letter-spacing:.3px}
+.hero .day{font-size:12.5px;opacity:.78}
+.hero .plats{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}
+.hero .plat{background:rgba(255,255,255,.15);border-radius:999px;padding:5px 11px;font-size:12px;display:inline-flex;gap:6px;align-items:center;font-variant-numeric:tabular-nums}
+.hero .none{font-size:12.5px;opacity:.85;margin-top:12px}
+
+/* 摘要格 */
+.sum-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:14px 16px 0}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;box-shadow:var(--shadow)}
+.sum .k{font-size:12.5px;color:var(--ink3)}
+.sum .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:3px}
+.sum .v.inc{color:var(--inc-strong)}
+.sum .v.out{color:var(--out-strong)}
+.sum .v.net{color:var(--brand-strong)}
+
+/* 區塊標題 */
+.sec{padding:18px 16px 8px;font-size:13px;font-weight:700;color:var(--ink3);display:flex;justify-content:space-between;align-items:center}
+.sec .more{color:var(--brand);font-size:12.5px;font-weight:600;border:none;background:none;cursor:pointer;padding:4px 0}
+
+/* 按鈕 */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:52px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn:active{transform:scale(.985)}
+.btn-inc{background:var(--inc);color:#fff}
+.btn-out{background:var(--out);color:#fff}
+.btn-ghost{background:var(--card);border:1px solid var(--line);color:var(--ink2)}
+.cta-row{display:flex;gap:10px;padding:16px 16px 0}
+.cta-row .btn{flex:1}
+
+/* 分段切換 */
+.seg{display:flex;background:#E8EDF1;border-radius:12px;padding:4px;margin:12px 16px 0}
+.seg button{flex:1;height:42px;border:none;background:transparent;border-radius:9px;font-size:15px;font-weight:600;color:var(--ink2);cursor:pointer;font-family:inherit}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(23,36,46,.12)}
+.seg button.on.inc{color:var(--inc-strong)}
+.seg button.on.out{color:var(--out-strong)}
+
+/* 平台 chips */
+.lbl{font-size:12.5px;color:var(--ink3);font-weight:600;padding:16px 16px 0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;padding:9px 16px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 15px;border-radius:999px;border:1.5px solid var(--line);background:var(--card);font-size:14px;font-weight:500;color:var(--ink2);cursor:pointer;font-family:inherit}
+.chip.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-strong);font-weight:600}
+
+/* 類別格 */
+.cats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:9px 16px 0}
+.cat{border:1.5px solid var(--line);background:var(--card);border-radius:12px;padding:12px 6px;font-size:13.5px;font-weight:500;color:var(--ink2);cursor:pointer;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-family:inherit}
+.cat.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-strong);font-weight:600}
+.cat .dot{width:8px;height:8px;border-radius:50%;background:#C9D4DC}
+.cat.on .dot{background:var(--brand)}
+
+/* 金額輸入 */
+.amount-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin:14px 16px 0;box-shadow:var(--shadow)}
+.amount-label{font-size:12.5px;color:var(--ink3);font-weight:600;margin-bottom:6px}
+.amount-row{display:flex;align-items:baseline;gap:8px}
+.amount-prefix{font-size:22px;font-weight:700;color:var(--ink3)}
+#in-amount{flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:38px;font-weight:700;font-family:inherit;font-variant-numeric:tabular-nums;color:var(--ink)}
+.quick{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px 0}
+.qchip{height:38px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:14px;font-weight:600;color:var(--ink2);cursor:pointer;font-variant-numeric:tabular-nums;font-family:inherit}
+
+/* 表單列 */
+.frow-in{display:flex;gap:10px;padding:14px 16px 0}
+.frow-in>div{flex:1}
+.frow-in label{display:block;font-size:12.5px;color:var(--ink3);font-weight:600;margin-bottom:6px}
+.frow-in input{width:100%;height:46px;border:1px solid var(--line);border-radius:12px;padding:0 12px;font-size:16px;font-family:inherit;color:var(--ink);background:var(--card);outline:none}
+.frow-in input:focus{border-color:var(--brand)}
+.save-wrap{padding:18px 16px 6px}
+
+/* 明細篩選 */
+.frow{display:flex;gap:8px;padding:12px 16px 0;overflow-x:auto;scrollbar-width:none}
+.frow::-webkit-scrollbar{display:none}
+.fchip{flex:none;height:36px;padding:0 15px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:13.5px;color:var(--ink2);cursor:pointer;font-family:inherit}
+.fchip.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+select.fsel{flex:1;min-width:0;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:13.5px;color:var(--ink2);padding:0 12px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235B6B78' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+
+/* 紀錄清單 */
+.rgroup{margin:14px 16px 0}
+.rdate{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--ink3);padding:0 2px 7px}
+.rdate b{color:var(--ink2);font-weight:700;font-variant-numeric:tabular-nums}
+.rlist{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.rrow{display:flex;align-items:center;gap:11px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.rrow:last-child{border-bottom:none}
+.rrow:active{background:#F7F9FB}
+.ricon{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:none}
+.ricon.in{background:var(--inc-soft);color:var(--inc-strong)}
+.ricon.out{background:var(--out-soft);color:var(--out-strong)}
+.rmid{flex:1;min-width:0}
+.rmid .t{font-size:14px;font-weight:600}
+.rmid .s{font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ramt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;flex:none}
+.ramt.in{color:var(--inc-strong)}
+.ramt.out{color:var(--out-strong)}
+
+/* 統計 */
+.snav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 0}
+.navbtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink2);display:grid;place-items:center;cursor:pointer}
+.snav .lbl{font-size:16px;font-weight:700}
+.chart-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);margin:12px 16px 0;padding:14px;box-shadow:var(--shadow)}
+.chart-card h3{font-size:14px;font-weight:700;margin-bottom:3px}
+.chart-card .sub{font-size:12px;color:var(--ink3);margin-bottom:8px}
+.legend{display:flex;gap:14px;margin:4px 0 8px;font-size:12px;color:var(--ink2)}
+.legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:0}
+.bars{padding:2px 0 4px}
+.brow{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bname{width:78px;font-size:12.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;text-align:right}
+.btrack{flex:1;height:9px;background:#EDF1F4;border-radius:999px;overflow:hidden}
+.bfill{height:100%;border-radius:999px;background:var(--brand)}
+.bval{width:64px;text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;flex:none}
+svg.chart{width:100%;height:auto;display:block}
+
+/* 底部導覽 */
+.tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:rgba(255,255,255,.97);backdrop-filter:blur(10px);border-top:1px solid var(--line);display:flex;z-index:50;padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 8px;border:none;background:none;color:var(--ink3);font-size:11px;cursor:pointer;font-family:inherit;min-height:58px;justify-content:center}
+.tab.active{color:var(--brand);font-weight:600}
+
+/* 彈層 */
+.sheet-mask{position:fixed;inset:0;background:rgba(15,23,30,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--card);border-radius:20px 20px 0 0;width:100%;max-width:480px;max-height:84dvh;overflow:auto;padding:12px 18px calc(22px + env(safe-area-inset-bottom));animation:up .22s ease}
+.sheet .stitle{font-size:16px;font-weight:700;padding:6px 0 4px;display:flex;justify-content:space-between;align-items:center}
+@keyframes up{from{transform:translateY(26px);opacity:.4}to{transform:none;opacity:1}}
+.intro-wrap{display:flex;align-items:center;justify-content:center;padding:24px}
+.intro-card{background:#fff;border-radius:22px;max-width:340px;width:100%;padding:26px 22px 22px;box-shadow:var(--shadow-lg);text-align:center;animation:up .22s ease}
+.intro-card .logo{width:52px;height:52px;border-radius:16px;background:linear-gradient(150deg,#0E8796,#0A6B78);display:grid;place-items:center;color:#fff;margin:0 auto 12px}
+.intro-card h2{font-size:18px;font-weight:700;margin-bottom:6px}
+.intro-card p{font-size:13.5px;color:var(--ink2);margin-bottom:16px;text-align:left}
+.intro-card .btn{margin-top:10px}
+
+/* 設定 */
+.srow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.srow:last-child{border-bottom:none}
+.srow .name{flex:1;font-size:14.5px}
+.srow .tag{font-size:11px;color:var(--ink3);background:#EFF3F6;border-radius:6px;padding:2px 7px}
+.mini{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--ink3);display:grid;place-items:center;cursor:pointer;flex:none}
+.mini.danger{color:var(--out-strong);border-color:#F3D8CF;background:var(--out-soft)}
+.addrow{display:flex;gap:8px;padding:12px 0 2px}
+.addrow input{flex:1;min-width:0;height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:16px;font-family:inherit;outline:none;color:var(--ink)}
+.addrow input:focus{border-color:var(--brand)}
+.sbtn{height:42px;padding:0 16px;border:none;border-radius:10px;background:var(--brand);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.snote{font-size:12px;color:var(--ink3);line-height:1.6;padding:10px 0 2px}
+
+/* 空態 */
+.empty{padding:36px 20px;text-align:center;color:var(--ink3);font-size:13.5px}
+.empty .i{width:38px;height:38px;margin:0 auto 10px;color:#C6D0D8}
+
+/* Toast */
+#toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(10px);background:rgba(23,36,46,.94);color:#fff;font-size:14px;padding:10px 20px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:80;max-width:86vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%)}
+
+@media (min-width:768px){
+  .app{min-height:calc(100dvh - 24px);margin:12px auto;border-radius:22px;overflow:hidden}
+  .tabbar{border-radius:0 0 22px 22px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20l1.2-4.3L16.8 4.1a2 2 0 0 1 2.8 0l.3.3a2 2 0 0 1 0 2.8L8.3 18.8z"/><path d="M14.5 6.5l3 3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7.5 16v-4M12 16V7M16.5 16v-2.5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.9 1.9M7.4 16.6l-1.9 1.9M18.5 18.5l-1.9-1.9M7.4 7.4L5.5 5.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V5h5v2M6.5 7l1 13h9l1-13"/><path d="M10 11v5M14 11v5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 0 1 13-5L20 9.5M20 5v4.5h-4.5"/><path d="M19.5 12a7.5 7.5 0 0 1-13 5L4 14.5M4 19v-4.5h4.5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M5.5 12.5L12 19l6.5-6.5"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 9.5h18"/><path d="M16 13.5h2"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M4.5 16l1.6-5.6A2 2 0 0 1 8 8.9h8a2 2 0 0 1 1.9 1.5L19.5 16"/><path d="M3 16h18v3.5a1 1 0 0 1-1 1h-1.5a1 1 0 0 1-1-1V18h-9v1.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V17"/><circle cx="8" cy="15.5" r="1"/><circle cx="16" cy="15.5" r="1"/></symbol>
+</svg>
+
+<main class="views">
+
+  <!-- ===== 首頁 ===== -->
+  <section id="view-home" class="view active">
+    <div class="hdr">
+      <div><h1>豆子帳務系統</h1><div class="sub" id="home-date"></div></div>
+      <button class="iconbtn" data-action="open-settings" aria-label="設定"><svg class="i"><use href="#i-gear" xlink:href="#i-gear"/></svg></button>
+    </div>
+    <div class="hero">
+      <div class="hl"><svg class="i" style="width:15px;height:15px"><use href="#i-up" xlink:href="#i-up"/></svg>今日收入</div>
+      <div class="big" id="hero-today">NT$ 0</div>
+      <div class="day" id="hero-note"></div>
+      <div class="plats" id="hero-plats"></div>
+    </div>
+    <div class="sum-grid">
+      <div class="sum"><div class="k">今日支出</div><div class="v out" id="sum-today-out">NT$ 0</div></div>
+      <div class="sum"><div class="k">本月收入</div><div class="v inc" id="sum-month-in">NT$ 0</div></div>
+      <div class="sum"><div class="k">本月支出</div><div class="v out" id="sum-month-out">NT$ 0</div></div>
+      <div class="sum"><div class="k">今年結餘</div><div class="v net" id="sum-year-net">NT$ 0</div></div>
+    </div>
+    <div class="cta-row">
+      <button class="btn btn-inc" data-action="go-entry" data-mode="in"><svg class="i"><use href="#i-up" xlink:href="#i-up"/></svg>記收入</button>
+      <button class="btn btn-out" data-action="go-entry" data-mode="out"><svg class="i"><use href="#i-down" xlink:href="#i-down"/></svg>記支出</button>
+    </div>
+    <div class="sec">最近紀錄 <button class="more" data-action="go-records">查看全部</button></div>
+    <div id="home-recent"></div>
+  </section>
+
+  <!-- ===== 記帳 ===== -->
+  <section id="view-entry" class="view">
+    <div class="hdr">
+      <div><h1 id="entry-title">記一筆</h1><div class="sub" id="entry-sub"></div></div>
+      <button class="iconbtn hidden" id="entry-cancel" data-action="entry-cancel"><svg class="i"><use href="#i-x" xlink:href="#i-x"/></svg></button>
+    </div>
+    <div class="seg">
+      <button id="seg-in" data-action="set-mode" data-mode="in">收入</button>
+      <button id="seg-out" data-action="set-mode" data-mode="out">支出</button>
+    </div>
+    <div class="lbl" id="lbl-platform">平台</div>
+    <div class="chips" id="entry-platforms"></div>
+    <div class="lbl">類別</div>
+    <div class="cats" id="entry-cats"></div>
+    <div class="amount-card">
+      <div class="amount-label">金額</div>
+      <div class="amount-row"><span class="amount-prefix">NT$</span><input id="in-amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></div>
+    </div>
+    <div class="quick" id="quick-amounts"></div>
+    <div class="frow-in">
+      <div><label>日期</label><input type="date" id="in-date"></div>
+      <div><label>時間</label><input type="time" id="in-time"></div>
+    </div>
+    <div class="frow-in">
+      <div><label>備註（選填）</label><input type="text" id="in-note" placeholder="例如：機場接送、來回趟數…"></div>
+    </div>
+    <div class="save-wrap">
+      <button class="btn btn-inc" id="btn-save" data-action="save-record">儲存</button>
+    </div>
+  </section>
+
+  <!-- ===== 明細 ===== -->
+  <section id="view-records" class="view">
+    <div class="hdr"><div><h1>明細</h1><div class="sub">點紀錄可修改或刪除</div></div></div>
+    <div class="frow" id="f-type">
+      <button class="fchip on" data-action="f-type" data-v="all">全部</button>
+      <button class="fchip" data-action="f-type" data-v="in">收入</button>
+      <button class="fchip" data-action="f-type" data-v="out">支出</button>
+    </div>
+    <div class="frow" id="f-period">
+      <button class="fchip" data-action="f-period" data-v="today">今日</button>
+      <button class="fchip on" data-action="f-period" data-v="month">本月</button>
+      <button class="fchip" data-action="f-period" data-v="year">本年</button>
+      <button class="fchip" data-action="f-period" data-v="all">全部</button>
+    </div>
+    <div class="frow" id="f-platform-row"></div>
+    <div id="records-list"></div>
+  </section>
+
+  <!-- ===== 統計 ===== -->
+  <section id="view-stats" class="view">
+    <div class="hdr"><div><h1>統計</h1><div class="sub">收入與支出分析</div></div></div>
+    <div class="seg">
+      <button id="seg-month" data-action="stats-unit" data-v="month">月</button>
+      <button id="seg-year" data-action="stats-unit" data-v="year">年</button>
+    </div>
+    <div class="snav">
+      <button class="navbtn" data-action="stats-nav" data-d="-1"><svg class="i"><use href="#i-chev-l" xlink:href="#i-chev-l"/></svg></button>
+      <div class="lbl" id="stats-label"></div>
+      <button class="navbtn" data-action="stats-nav" data-d="1"><svg class="i"><use href="#i-chev-r" xlink:href="#i-chev-r"/></svg></button>
+    </div>
+    <div id="stats-body"></div>
+  </section>
+
+</main>
+
+<nav class="tabbar">
+  <button class="tab active" data-action="go-view" data-v="home"><svg class="i"><use href="#i-home" xlink:href="#i-home"/></svg>首頁</button>
+  <button class="tab" data-action="go-view" data-v="entry"><svg class="i"><use href="#i-edit" xlink:href="#i-edit"/></svg>記帳</button>
+  <button class="tab" data-action="go-view" data-v="records"><svg class="i"><use href="#i-list" xlink:href="#i-list"/></svg>明細</button>
+  <button class="tab" data-action="go-view" data-v="stats"><svg class="i"><use href="#i-chart" xlink:href="#i-chart"/></svg>統計</button>
+</nav>
+
+<!-- ===== 設定 ===== -->
+<div class="sheet-mask hidden" id="mask-settings">
+  <div class="sheet" id="sheet-settings">
+    <div class="stitle">設定 <button class="iconbtn" data-action="close-settings"><svg class="i"><use href="#i-x" xlink:href="#i-x"/></svg></button></div>
+    <div id="settings-body"></div>
+    <div class="snote">資料說明：紀錄儲存在「這個瀏覽器」裡，清除瀏覽資料會一併清除；建議定期用「匯出 CSV」備份。</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
