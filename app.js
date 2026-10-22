@@ -1,4 +1,3 @@
-
 'use strict';
 /* ============ 資料定義（收入／支出類別、平台） ============ */
 const LS_KEY='taxiLedgerV1';
@@ -175,6 +174,7 @@ function saveRecord(){
     save();toast('已更新');editId=null;goView('records');
   }else{
     state.records.push(rec);save();toast('已儲存'+(isIn?'收入':'支出'));
+    try{if(dbxIsLinked())setTimeout(function(){dbxSync(false);},600);}catch(e){}
     $('#in-amount').value='';$('#in-note').value='';$('#in-time').value=nowTime();
     renderEntry();
   }
@@ -195,6 +195,7 @@ function delRecord(){
   if(!confirm('確定刪除這筆紀錄？刪除後無法復原。'))return;
   state.records=state.records.filter(x=>x.id!==editId);
   save();toast('已刪除');editId=null;goView('records');
+  try{if(dbxIsLinked())setTimeout(function(){dbxSync(false);},600);}catch(e){}
 }
 
 /* ============ 明細 ============ */
@@ -356,6 +357,10 @@ function renderSettings(){
    +'<div class="lbl" style="padding:10px 0 4px">支出類別</div>'
    +'<div>'+state.expenseCats.map(c=>'<div class="srow"><span class="name">'+esc(c.name)+'</span><button class="mini danger" data-action="del-cat" data-type="out" data-id="'+c.id+'"><svg class="i" style="width:16px;height:16px"><use href="#i-trash" xlink:href="#i-trash"/></svg></button></div>').join('')+'</div>'
    +'<div class="addrow"><input id="add-cat-out" placeholder="新增支出類別"><button class="sbtn" data-action="add-cat" data-type="out">新增</button></div>'
+   +'<div class="lbl" style="padding:10px 0 4px">Dropbox 同步</div>'
+   +'<div class="srow"><span class="name" id="dbx-status">尚未連結</span><button class="sbtn" style="height:36px;padding:0 14px" id="dbx-btn" data-action="dbx-action">連結 Dropbox</button></div>'
+   +'<div class="srow"><span class="name">立即同步</span><button class="mini" data-action="dbx-now"><svg class="i" style="width:16px;height:16px"><use href="#i-refresh" xlink:href="#i-refresh"/></svg></button></div>'
+   +'<div class="snote">同步檔：Dropbox 的 Apps/豆子帳務/豆子帳務資料.xlsx。每次儲存後自動同步；電腦端 Dropbox 會自動留底。</div>'
    +'<div class="lbl" style="padding:10px 0 4px">資料</div>'
    +'<div class="srow"><span class="name">匯出 CSV（Excel 可開）</span><button class="mini" data-action="export-csv" title="匯出"><svg class="i" style="width:16px;height:16px"><use href="#i-download" xlink:href="#i-download"/></svg></button></div>'
    +'<div class="srow"><span class="name">清除所有資料</span><button class="mini danger" data-action="clear-all"><svg class="i" style="width:16px;height:16px"><use href="#i-trash" xlink:href="#i-trash"/></svg></button></div>';
@@ -404,6 +409,211 @@ function clearAllAction(){
   state.records=[];save();renderCurrent();toast('已清除所有資料');
 }
 
+
+/* ============ Dropbox 同步 ============ */
+const DBX_APP_KEY='dqv70jwk549lca7';
+const DBX_REDIRECT='https://marathon-briefing.github.io/';
+const DBX_FILE='/豆子帳務資料.xlsx';
+const DBX_LS='taxiLedgerDbxV1';
+let dbxBusy=false;
+function dbxTokens(){try{const raw=localStorage.getItem(DBX_LS);return raw?JSON.parse(raw):null;}catch(e){return null;}}
+function dbxSaveTokens(t){try{localStorage.setItem(DBX_LS,JSON.stringify(t));}catch(e){toast('同步設定儲存失敗');}}
+function dbxClearTokens(){try{localStorage.removeItem(DBX_LS);}catch(e){}}
+function dbxIsLinked(){const t=dbxTokens();return !!(t&&t.refresh_token);}
+function dbxLastSync(){try{const t=dbxTokens();return t&&t.lastSyncAt?t.lastSyncAt:'';}catch(e){return '';}}
+function dbxQ(params){return Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('&');}
+async function dbxFetch(url,opts){
+  const res=await fetch(url,opts);
+  const text=await res.text();
+  let data=null;try{data=text?JSON.parse(text):null;}catch(e){data=null;}
+  if(!res.ok){const m=(data&&(data.error_summary||(data.error&&data.error['.tag'])))||('HTTP '+res.status);const err=new Error(m);err.status=res.status;throw err;}
+  return data;
+}
+async function dbxRefresh(){
+  const t=dbxTokens();if(!t||!t.refresh_token)throw new Error('尚未連結');
+  if(t.access_token&&t.expires_at&&Date.now()<t.expires_at-60000)return t.access_token;
+  const body=dbxQ({grant_type:'refresh_token',refresh_token:t.refresh_token,client_id:DBX_APP_KEY});
+  const r=await dbxFetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body});
+  t.access_token=r.access_token;t.expires_at=Date.now()+(r.expires_in||14400)*1000;
+  dbxSaveTokens(t);return t.access_token;
+}
+async function dbxDownload(){
+  const token=await dbxRefresh();
+  const res=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{'Authorization':'Bearer '+token,'Dropbox-API-Arg':JSON.stringify({path:DBX_FILE})}});
+  if(res.status===409){let d=null;try{d=await res.json();}catch(e){}if(d&&d.error&&d.error['.tag']==='path')return null;throw new Error('讀取雲端檔失敗');}
+  if(!res.ok)throw new Error('下載失敗 '+res.status);
+  return res.arrayBuffer();
+}
+async function dbxUpload(buf){
+  const token=await dbxRefresh();
+  const res=await fetch('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','Dropbox-API-Arg':JSON.stringify({path:DBX_FILE,mode:'overwrite',mute:true})},body:buf});
+  if(!res.ok){let d=null;try{d=await res.json();}catch(e){}throw new Error('上傳失敗 '+((d&&d.error_summary)||res.status));}
+  return res.json();
+}
+async function dbxStartAuth(){
+  if(typeof crypto==='undefined'||!crypto.subtle){toast('此瀏覽器不支援加密，無法連結 Dropbox');return;}
+  const v=new Uint8Array(32);crypto.getRandomValues(v);
+  let verifier='';
+  for(let i=0;i<16;i++){verifier+=String.fromCharCode(97+(v[i]%26));}
+  verifier+=btoa(String.fromCharCode.apply(null,v)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
+  const chal=btoa(String.fromCharCode.apply(null,new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const st=Math.random().toString(36).slice(2);
+  localStorage.setItem('dbx_pkce',JSON.stringify({verifier:verifier,state:st}));
+  const q=dbxQ({client_id:DBX_APP_KEY,response_type:'code',code_challenge:chal,code_challenge_method:'S256',token_access_type:'offline',redirect_uri:DBX_REDIRECT,state:st});
+  location.href='https://www.dropbox.com/oauth2/authorize?'+q;
+}
+async function dbxHandleRedirect(){
+  if(typeof location==='undefined'||!location.search)return;
+  const p=new URLSearchParams(location.search);
+  const code=p.get('code');
+  if(!code)return;
+  let pkce={};
+  try{pkce=JSON.parse(localStorage.getItem('dbx_pkce')||'{}');}catch(e){}
+  const st=p.get('state');
+  if(st&&pkce.state&&st!==pkce.state){toast('授權驗證失敗，請重試');try{history.replaceState({},'','/');}catch(e){}return;}
+  localStorage.removeItem('dbx_pkce');
+  const body=dbxQ({grant_type:'authorization_code',code:code,code_verifier:pkce.verifier||'',client_id:DBX_APP_KEY,redirect_uri:DBX_REDIRECT});
+  try{
+    const r=await dbxFetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body});
+    dbxSaveTokens({access_token:r.access_token,refresh_token:r.refresh_token,expires_at:Date.now()+(r.expires_in||14400)*1000,lastSyncAt:''});
+    try{history.replaceState({},'','/');}catch(e){}
+    toast('已連結 Dropbox');
+    setTimeout(function(){dbxSync(true);},400);
+  }catch(e){toast('連結失敗：'+e.message);try{history.replaceState({},'','/');}catch(e2){}}
+}
+function dbxBuildWb(){
+  const head=['日期','時間','類型','平台','類別','金額','支付方式','備註','系統ID','系統時間'];
+  const rows=state.records.slice().sort(function(a,b){return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);}).map(function(r){
+    const p=recPlatform(r),c=recCat(r);
+    return [r.date,r.time,r.type==='in'?'收入':'支出',r.type==='in'?(p?p.name:''):'',c.name,r.amount,r.pay||'',r.note||'',r.id,r.createdAt||0];
+  });
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([head].concat(rows)),'紀錄');
+  const set=[['類型','ID','名稱']];
+  state.platforms.forEach(function(x){set.push(['平台',x.id,x.name]);});
+  state.incomeCats.forEach(function(x){set.push(['收入',x.id,x.name]);});
+  state.expenseCats.forEach(function(x){set.push(['支出',x.id,x.name]);});
+  state.payMethods.forEach(function(x){set.push(['支付',x,x]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(set),'設定');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+function dbxParseWb(buf){
+  const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+  const out=[];
+  const ws=wb.Sheets['紀錄'];
+  if(ws){
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+    for(let i=1;i<rows.length;i++){
+      const r=rows[i];if(!r||!r[0])continue;
+      const date=String(r[0]).trim();
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(date))continue;
+      out.push({id:String(r[8]||uid()),type:(r[2]==='支出'?'out':'in'),date:date,time:String(r[1]||''),platformName:String(r[3]||''),platformId:null,catId:null,amount:parseFloat(r[5])||0,pay:String(r[6]||''),note:String(r[7]||''),createdAt:Number(r[9])||0});
+    }
+  }
+  let platforms=null,incomeCats=null,expenseCats=null,payMethods=null;
+  const ws2=wb.Sheets['設定'];
+  if(ws2){
+    const cat={platform:[],income:[],expense:[]},pm=[];
+    const s=XLSX.utils.sheet_to_json(ws2,{header:1,defval:''});
+    for(let i=1;i<s.length;i++){
+      const row=s[i];if(!row||!row[0])continue;
+      if(row[0]==='平台')cat.platform.push({id:String(row[1]||uid()),name:String(row[2]||'')});
+      else if(row[0]==='收入')cat.income.push({id:String(row[1]||uid()),name:String(row[2]||'')});
+      else if(row[0]==='支出')cat.expense.push({id:String(row[1]||uid()),name:String(row[2]||'')});
+      else if(row[0]==='支付')pm.push(String(row[1]||''));
+    }
+    if(cat.platform.length)platforms=cat.platform;
+    if(cat.income.length)incomeCats=cat.income;
+    if(cat.expense.length)expenseCats=cat.expense;
+    if(pm.length)payMethods=pm;
+  }
+  return {records:out,platforms:platforms,incomeCats:incomeCats,expenseCats:expenseCats,payMethods:payMethods};
+}
+function dbxMergeLists(custom,def){
+  const ids={};custom.forEach(function(x){ids[x.id]=1;});
+  return custom.concat(def.filter(function(d){return !ids[d.id];}));
+}
+function dbxApplySettings(s){
+  if(!s)return;
+  if(Array.isArray(s.platforms)&&s.platforms.length){state.platforms=dbxMergeLists(s.platforms,DEFAULT_PLATFORMS);dbxOrderPlatforms();}
+  if(Array.isArray(s.incomeCats)&&s.incomeCats.length)state.incomeCats=dbxMergeLists(s.incomeCats,DEFAULT_INCOME_CATS);
+  if(Array.isArray(s.expenseCats)&&s.expenseCats.length)state.expenseCats=dbxMergeLists(s.expenseCats,DEFAULT_EXPENSE_CATS);
+  if(Array.isArray(s.payMethods)&&s.payMethods.length)state.payMethods=s.payMethods;
+}
+function dbxOrderPlatforms(){
+  const custom=state.platforms.filter(function(p){return PLATFORM_ORDER.indexOf(p.id)<0;});
+  const ordered=[];
+  PLATFORM_ORDER.forEach(function(id){const p=state.platforms.find(function(x){return x.id===id;});if(p)ordered.push(p);});
+  state.platforms=ordered.concat(custom);
+}
+function dbxMapPlatforms(){
+  state.records.forEach(function(r){
+    if(r.type!=='in'||!r.platformName)return;
+    const p=state.platforms.find(function(x){return x.name===r.platformName;});
+    if(p)r.platformId=p.id;
+  });
+}
+function dbxMergeRecords(localArr,cloudArr){
+  const map={};
+  localArr.forEach(function(r){const k=r.id||(r.createdAt+'_'+r.amount+'_'+r.date);map[k]=r;});
+  cloudArr.forEach(function(r){
+    const k=r.id||(r.createdAt+'_'+r.amount+'_'+r.date);
+    const ex=map[k];
+    if(!ex){map[k]=r;}
+    else if(r.id&&r.id===ex.id&&(r.createdAt||0)>(ex.createdAt||0)){map[k]=r;}
+  });
+  return Object.keys(map).map(function(k){return map[k];});
+}
+function fmtSyncTime(iso){if(!iso)return '';const d=new Date(iso);return (d.getMonth()+1)+'月'+d.getDate()+'日 '+pad2(d.getHours())+':'+pad2(d.getMinutes());}
+async function dbxSync(force){
+  if(dbxBusy)return;
+  if(typeof XLSX==='undefined'){toast('Excel 套件未載入（需網路），請稍後再試');return;}
+  if(!dbxIsLinked()){toast('尚未連結 Dropbox');return;}
+  dbxBusy=true;
+  try{
+    let cloudBuf=null;
+    try{cloudBuf=await dbxDownload();}catch(e){toast('同步失敗：'+e.message);dbxBusy=false;return;}
+    let cloudRecords=[],cloudSet=null;
+    if(cloudBuf){const parsed=dbxParseWb(cloudBuf);cloudRecords=parsed.records;cloudSet=parsed;}
+    const merged=dbxMergeRecords(state.records,cloudRecords);
+    const changed=merged.length!==state.records.length;
+    if(changed||force){
+      state.records=merged;
+      dbxApplySettings(cloudSet);
+      dbxMapPlatforms();
+      save();
+      renderCurrent();
+    }
+    const buf=dbxBuildWb();
+    await dbxUpload(buf);
+    const t=dbxTokens()||{};t.lastSyncAt=new Date().toISOString();dbxSaveTokens(t);
+    dbxBusy=false;
+    toast('已同步 Dropbox · '+fmtSyncTime(t.lastSyncAt));
+    refreshDbxUI();
+  }catch(e){
+    dbxBusy=false;
+    toast('同步失敗：'+e.message);
+  }
+}
+function refreshDbxUI(){
+  const st=$('#dbx-status');const btn=$('#dbx-btn');
+  if(!st)return;
+  if(dbxIsLinked()){
+    st.textContent='已連結 · 上次同步 '+fmtSyncTime(dbxLastSync());
+    btn.textContent='解除連結';
+    btn.style.background='#E8EDF1';btn.style.color='var(--ink2)';
+  }else{
+    st.textContent='尚未連結（紀錄僅存本機瀏覽器）';
+    btn.textContent='連結 Dropbox';
+    btn.style.background='';btn.style.color='';
+  }
+}
+function dbxAction(){
+  if(dbxIsLinked()){dbxClearTokens();refreshDbxUI();toast('已解除連結（雲端檔仍保留）');}
+  else{dbxStartAuth();}
+}
+
 /* ============ 事件與初始化 ============ */
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-action]');if(!el)return;
@@ -427,13 +637,15 @@ document.addEventListener('click',e=>{
     case 'f-period':recFilter.period=el.dataset.v;renderRecords();break;
     case 'stats-unit':statsUnit=el.dataset.v;renderStats();break;
     case 'stats-nav':statsNav(parseInt(el.dataset.d,10));break;
-    case 'open-settings':renderSettings();$('#mask-settings').classList.remove('hidden');break;
+    case 'open-settings':renderSettings();refreshDbxUI();$('#mask-settings').classList.remove('hidden');break;
     case 'close-settings':$('#mask-settings').classList.add('hidden');break;
     case 'add-plat':addPlat();break;
     case 'del-plat':delPlat(el.dataset.id);break;
     case 'add-cat':addCat(el.dataset.type);break;
     case 'del-cat':delCat(el.dataset.type,el.dataset.id);break;
     case 'export-csv':exportCSV();break;
+    case 'dbx-action':dbxAction();break;
+    case 'dbx-now':dbxSync(true);break;
     case 'clear-all':clearAllAction();break;
   }
 });
@@ -443,5 +655,7 @@ function init(){
   amt.addEventListener('keydown',function(e){if(e.key==='Enter')saveRecord();});
   $('#mask-settings').addEventListener('click',e=>{if(e.target.id==='mask-settings')e.target.classList.add('hidden');});
   renderHome();
+  try{dbxHandleRedirect();}catch(e){}
+  try{if(dbxIsLinked())setTimeout(function(){dbxSync(false);},900);}catch(e){}
 }
 init();
