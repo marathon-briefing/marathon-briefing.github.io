@@ -360,6 +360,7 @@ function renderSettings(){
    +'<div class="lbl" style="padding:10px 0 4px">Dropbox 同步</div>'
    +'<div class="srow"><span class="name" id="dbx-status">尚未連結</span><button class="sbtn" style="height:36px;padding:0 14px" id="dbx-btn" data-action="dbx-action">連結 Dropbox</button></div>'
    +'<div class="srow"><span class="name">立即同步</span><button class="mini" data-action="dbx-now"><svg class="i" style="width:16px;height:16px"><use href="#i-refresh" xlink:href="#i-refresh"/></svg></button></div>'
+   +'<div class="srow"><span class="name">詳細診斷（查 Dropbox 權限）</span><button class="mini" data-action="dbx-diag"><svg class="i" style="width:16px;height:16px"><use href="#i-search" xlink:href="#i-search"/></svg></button></div>'
    +'<div class="snote">同步檔：Dropbox 的 Apps/豆子帳務/豆子帳務資料.xlsx。每次儲存後自動同步；電腦端 Dropbox 會自動留底。</div>'
    +'<div class="lbl" style="padding:10px 0 4px">資料</div>'
    +'<div class="srow"><span class="name">匯出 CSV（Excel 可開）</span><button class="mini" data-action="export-csv" title="匯出"><svg class="i" style="width:16px;height:16px"><use href="#i-download" xlink:href="#i-download"/></svg></button></div>'
@@ -453,7 +454,7 @@ async function dbxDownload(){
   const args=[dbxArg({path:DBX_FILE}),dbxArgRaw({path:DBX_FILE})];
   let lastErr=null;
   for(const a of args){
-    const res=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{'Authorization':'Bearer '+token,'Dropbox-API-Arg':a}});
+    const res=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','Dropbox-API-Arg':a}});
     if(res.status===200)return res.arrayBuffer();
     if(res.status===409){
       try{const d=await res.json();if(d&&d.error&&d.error['.tag']==='path')return null;}catch(e){}
@@ -650,6 +651,28 @@ function dbxAction(){
   if(dbxIsLinked()){dbxClearTokens();refreshDbxUI();toast('已解除連結（雲端檔仍保留）');}
   else{dbxStartAuth();}
 }
+async function dbxDiag(){
+  if(!dbxIsLinked()){toast('尚未連結 Dropbox');return;}
+  const t=dbxTokens();
+  const out=[];
+  async function probe(name,url,headers,body){
+    try{
+      const res=await fetch(url,{method:'POST',headers:headers,body:body});
+      const text=await res.text();
+      let tag='';
+      try{const d=JSON.parse(text);tag=(d&&d.error&&d.error['.tag'])||(d&&d.error)||'';}catch(e){tag=text.slice(0,40);}
+      out.push(name+' → HTTP '+res.status+(tag?(' ['+String(tag).slice(0,40)+']'):''));
+    }catch(e){out.push(name+' → 例外 '+e.message.slice(0,60));}
+  }
+  const tok='Bearer '+(t.access_token||'');
+  await probe('1.帳號(api)', 'https://api.dropboxapi.com/2/users/get_current_account', {'Authorization':tok,'Content-Type':'application/json'});
+  await probe('2.列出App資料夾', 'https://api.dropboxapi.com/2/files/list_folder', {'Authorization':tok,'Content-Type':'application/json','Dropbox-API-Arg':dbxArgRaw({path:''})});
+  await probe('3.上傳ASCII測試檔', 'https://content.dropboxapi.com/2/files/upload', {'Authorization':tok,'Content-Type':'application/octet-stream','Dropbox-API-Arg':dbxArgRaw({path:'/douzi_test.txt',mode:'overwrite',mute:true})}, 'hello');
+  await probe('4.上傳中文檔名', 'https://content.dropboxapi.com/2/files/upload', {'Authorization':tok,'Content-Type':'application/octet-stream','Dropbox-API-Arg':dbxArgRaw({path:DBX_FILE,mode:'overwrite',mute:true})}, 'hello');
+  const st=$('#dbx-status');
+  if(st){st.textContent='診斷結果：\n'+out.join('\n');st.style.whiteSpace='pre-wrap';}
+  toast('診斷完成，請看上方結果');
+}
 
 /* ============ 事件與初始化 ============ */
 document.addEventListener('click',e=>{
@@ -683,6 +706,7 @@ document.addEventListener('click',e=>{
     case 'export-csv':exportCSV();break;
     case 'dbx-action':dbxAction();break;
     case 'dbx-now':dbxSync(true);break;
+    case 'dbx-diag':dbxDiag();break;
     case 'clear-all':clearAllAction();break;
   }
 });
