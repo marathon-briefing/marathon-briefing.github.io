@@ -427,7 +427,16 @@ async function dbxFetch(url,opts){
   const res=await fetch(url,opts);
   const text=await res.text();
   let data=null;try{data=text?JSON.parse(text):null;}catch(e){data=null;}
-  if(!res.ok){const m=(data&&(data.error_summary||(data.error&&data.error['.tag'])))||('HTTP '+res.status);const err=new Error(m);err.status=res.status;throw err;}
+  if(!res.ok){
+    let m='HTTP '+res.status;
+    if(data){
+      if(data.error_summary)m=String(data.error_summary).slice(0,160);
+      else if(typeof data.error==='string')m=data.error+(data.error_description?(' '+data.error_description):'');
+      else if(data.error&&data.error['.tag'])m=data.error['.tag']+(data.error.reason?(' '+JSON.stringify(data.error.reason).slice(0,80)):'');
+      else if(data.error)m=JSON.stringify(data.error).slice(0,160);
+    }
+    const err=new Error(m);err.status=res.status;throw err;
+  }
   return data;
 }
 async function dbxRefresh(){
@@ -567,6 +576,9 @@ function dbxMergeRecords(localArr,cloudArr){
   return Object.keys(map).map(function(k){return map[k];});
 }
 function fmtSyncTime(iso){if(!iso)return '';const d=new Date(iso);return (d.getMonth()+1)+'月'+d.getDate()+'日 '+pad2(d.getHours())+':'+pad2(d.getMinutes());}
+function dbxSetErr(msg){try{localStorage.setItem('taxiLedgerDbxErr',JSON.stringify({msg:msg,at:Date.now()}));}catch(e){}}
+function dbxClearErr(){try{localStorage.removeItem('taxiLedgerDbxErr');}catch(e){}}
+function dbxErrText(){try{const raw=localStorage.getItem('taxiLedgerDbxErr');if(!raw)return '';const o=JSON.parse(raw);return o.msg?('上次同步失敗：'+o.msg):'';}catch(e){return '';}}
 async function dbxSync(force){
   if(dbxBusy)return;
   if(typeof XLSX==='undefined'){toast('Excel 套件未載入（需網路），請稍後再試');return;}
@@ -574,9 +586,11 @@ async function dbxSync(force){
   dbxBusy=true;
   try{
     let cloudBuf=null;
-    try{cloudBuf=await dbxDownload();}catch(e){toast('同步失敗：'+e.message);dbxBusy=false;return;}
+    try{cloudBuf=await dbxDownload();}catch(e){const m='下載雲端檔失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast('同步失敗：'+e.message);refreshDbxUI();return;}
     let cloudRecords=[],cloudSet=null;
-    if(cloudBuf){const parsed=dbxParseWb(cloudBuf);cloudRecords=parsed.records;cloudSet=parsed;}
+    try{
+      if(cloudBuf){const parsed=dbxParseWb(cloudBuf);cloudRecords=parsed.records;cloudSet=parsed;}
+    }catch(e){const m='讀取雲端 Excel 失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast('同步失敗：'+e.message);return;}
     const merged=dbxMergeRecords(state.records,cloudRecords);
     const changed=merged.length!==state.records.length;
     if(changed||force){
@@ -586,26 +600,29 @@ async function dbxSync(force){
       save();
       renderCurrent();
     }
-    const buf=dbxBuildWb();
-    await dbxUpload(buf);
+    let buf;
+    try{buf=dbxBuildWb();}catch(e){const m='產生 Excel 失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast('同步失敗：'+e.message);return;}
+    try{await dbxUpload(buf);}catch(e){const m='上傳失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast('同步失敗：'+e.message);refreshDbxUI();return;}
     const t=dbxTokens()||{};t.lastSyncAt=new Date().toISOString();dbxSaveTokens(t);
+    dbxClearErr();
     dbxBusy=false;
     toast('已同步 Dropbox · '+fmtSyncTime(t.lastSyncAt));
     refreshDbxUI();
   }catch(e){
-    dbxBusy=false;
-    toast('同步失敗：'+e.message);
+    const m='同步失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast(m);refreshDbxUI();
   }
 }
 function refreshDbxUI(){
   const st=$('#dbx-status');const btn=$('#dbx-btn');
   if(!st)return;
+  const err=dbxErrText();
   if(dbxIsLinked()){
     st.textContent='已連結 · 上次同步 '+fmtSyncTime(dbxLastSync());
+    if(err)st.textContent=err;
     btn.textContent='解除連結';
     btn.style.background='#E8EDF1';btn.style.color='var(--ink2)';
   }else{
-    st.textContent='尚未連結（紀錄僅存本機瀏覽器）';
+    st.textContent=err||'尚未連結（紀錄僅存本機瀏覽器）';
     btn.textContent='連結 Dropbox';
     btn.style.background='';btn.style.color='';
   }
