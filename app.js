@@ -446,7 +446,7 @@ async function dbxRefresh(){
   if(t.access_token&&t.expires_at&&Date.now()<t.expires_at-60000)return t.access_token;
   const body=dbxQ({grant_type:'refresh_token',refresh_token:t.refresh_token,client_id:DBX_APP_KEY});
   const r=await dbxFetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body});
-  t.access_token=r.access_token;t.expires_at=Date.now()+(r.expires_in||14400)*1000;
+  t.access_token=r.access_token;t.expires_at=Date.now()+(r.expires_in||14400)*1000;if(r.scope)t.scope=r.scope;
   dbxSaveTokens(t);return t.access_token;
 }
 async function dbxDownload(){
@@ -489,7 +489,7 @@ async function dbxStartAuth(){
   const chal=btoa(String.fromCharCode.apply(null,new Uint8Array(h))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const st=Math.random().toString(36).slice(2);
   localStorage.setItem('dbx_pkce',JSON.stringify({verifier:verifier,state:st}));
-  const q=dbxQ({client_id:DBX_APP_KEY,response_type:'code',code_challenge:chal,code_challenge_method:'S256',token_access_type:'offline',redirect_uri:DBX_REDIRECT,state:st});
+  const q=dbxQ({client_id:DBX_APP_KEY,response_type:'code',code_challenge:chal,code_challenge_method:'S256',token_access_type:'offline',redirect_uri:DBX_REDIRECT,state:st,scope:'account_info.read files.content.read files.content.write'});
   location.href='https://www.dropbox.com/oauth2/authorize?'+q;
 }
 async function dbxHandleRedirect(){
@@ -505,7 +505,7 @@ async function dbxHandleRedirect(){
   const body=dbxQ({grant_type:'authorization_code',code:code,code_verifier:pkce.verifier||'',client_id:DBX_APP_KEY,redirect_uri:DBX_REDIRECT});
   try{
     const r=await dbxFetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body});
-    dbxSaveTokens({access_token:r.access_token,refresh_token:r.refresh_token,expires_at:Date.now()+(r.expires_in||14400)*1000,lastSyncAt:''});
+    dbxSaveTokens({access_token:r.access_token,refresh_token:r.refresh_token,expires_at:Date.now()+(r.expires_in||14400)*1000,scope:r.scope||'',lastSyncAt:''});
     try{history.replaceState({},'','/');}catch(e){}
     toast('已連結 Dropbox');
     setTimeout(function(){dbxSync(true);},400);
@@ -655,18 +655,29 @@ async function dbxDiag(){
   if(!dbxIsLinked()){toast('尚未連結 Dropbox');return;}
   const t=dbxTokens();
   const out=[];
+  const scopes=t&&t.scope?String(t.scope):'（未記錄，可能為舊版授權）';
+  out.push('0.授權權限 → '+scopes);
+  if(String(scopes).indexOf('files.content.write')<0){
+    out.push('   ⚠ 缺少檔案寫入權限：請到 Dropbox 後台 Apps/豆子帳務 → 權限 → 勾選「Files content」Read＋Write，再回本頁「解除連結」→「連結 Dropbox」重新授權');
+  }
+  let tok='';
+  try{tok='Bearer '+await dbxRefresh();}
+  catch(e){
+    out.push('1.更新token → 失敗 '+e.message.slice(0,80));
+    const st=$('#dbx-status');if(st){st.textContent='診斷結果：\n'+out.join('\n');st.style.whiteSpace='pre-wrap';}
+    toast('診斷完成，請看上方結果');return;
+  }
   async function probe(name,url,headers,body){
     try{
       const res=await fetch(url,{method:'POST',headers:headers,body:body});
       const text=await res.text();
-      let tag='';
-      try{const d=JSON.parse(text);tag=(d&&d.error&&d.error['.tag'])||(d&&d.error)||'';}catch(e){tag=text.slice(0,40);}
-      out.push(name+' → HTTP '+res.status+(tag?(' ['+String(tag).slice(0,40)+']'):''));
-    }catch(e){out.push(name+' → 例外 '+e.message.slice(0,60));}
+      let msg='';
+      try{const d=JSON.parse(text);msg=(d&&d.error_summary)||(d&&d.error&&d.error['.tag'])||(d&&d.error)||'';}catch(e){msg=text.slice(0,120);}
+      out.push(name+' → HTTP '+res.status+(msg?(' ['+String(msg).slice(0,120)+']'):''));
+    }catch(e){out.push(name+' → 例外 '+e.message.slice(0,80));}
   }
-  const tok='Bearer '+(t.access_token||'');
-  await probe('1.帳號(api)', 'https://api.dropboxapi.com/2/users/get_current_account', {'Authorization':tok,'Content-Type':'application/json'});
-  await probe('2.列出App資料夾', 'https://api.dropboxapi.com/2/files/list_folder', {'Authorization':tok,'Content-Type':'application/json','Dropbox-API-Arg':dbxArgRaw({path:''})});
+  await probe('1.帳號(api)', 'https://api.dropboxapi.com/2/users/get_current_account', {'Authorization':tok,'Content-Type':'application/json'}, '{}');
+  await probe('2.列出App資料夾', 'https://api.dropboxapi.com/2/files/list_folder', {'Authorization':tok,'Content-Type':'application/json'}, dbxArgRaw({path:''}));
   await probe('3.上傳ASCII測試檔', 'https://content.dropboxapi.com/2/files/upload', {'Authorization':tok,'Content-Type':'application/octet-stream','Dropbox-API-Arg':dbxArgRaw({path:'/douzi_test.txt',mode:'overwrite',mute:true})}, 'hello');
   await probe('4.上傳中文檔名', 'https://content.dropboxapi.com/2/files/upload', {'Authorization':tok,'Content-Type':'application/octet-stream','Dropbox-API-Arg':dbxArgRaw({path:DBX_FILE,mode:'overwrite',mute:true})}, 'hello');
   const st=$('#dbx-status');
