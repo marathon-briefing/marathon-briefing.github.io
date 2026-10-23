@@ -422,7 +422,7 @@ function dbxClearTokens(){try{localStorage.removeItem(DBX_LS);}catch(e){}}
 function dbxIsLinked(){const t=dbxTokens();return !!(t&&t.refresh_token);}
 function dbxLastSync(){try{const t=dbxTokens();return t&&t.lastSyncAt?t.lastSyncAt:'';}catch(e){return '';}}
 function dbxQ(params){return Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('&');}
-function dbxArg(obj){let j='{}';try{j=JSON.stringify(obj);}catch(e){}return j.replace(/[\u0080-\uffff]/g,function(c){return '\\u'+('000'+c.charCodeAt(0).toString(16)).slice(-4);});}
+function dbxArg(obj){let j='{}';try{j=JSON.stringify(obj);}catch(e){}const a=j.replace(/[\u0080-\uffff]/g,function(c){return '\\u'+('000'+c.charCodeAt(0).toString(16)).slice(-4);});try{return btoa(a);}catch(e){return a;}}
 async function dbxFetch(url,opts){
   const res=await fetch(url,opts);
   const text=await res.text();
@@ -450,14 +450,25 @@ async function dbxRefresh(){
 async function dbxDownload(){
   const token=await dbxRefresh();
   const res=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{'Authorization':'Bearer '+token,'Dropbox-API-Arg':dbxArg({path:DBX_FILE})}});
-  if(res.status===409){let d=null;try{d=await res.json();}catch(e){}if(d&&d.error&&d.error['.tag']==='path')return null;throw new Error('讀取雲端檔失敗');}
-  if(!res.ok)throw new Error('下載失敗 '+res.status);
+  if(res.status===409){
+    try{const d=await res.json();if(d&&d.error&&d.error['.tag']==='path')return null;}catch(e){}
+    throw new Error('讀取雲端檔失敗 HTTP 409');
+  }
+  if(!res.ok){
+    let detail='';
+    try{const d=await res.json();detail=(d&&(d.error_summary||(d.error&&(d.error['.tag']||JSON.stringify(d.error)))))||'';}catch(e){try{detail=(await res.text()).slice(0,160);}catch(e2){detail='';}}
+    throw new Error('下載失敗 '+res.status+(detail?(' · '+detail):''));
+  }
   return res.arrayBuffer();
 }
 async function dbxUpload(buf){
   const token=await dbxRefresh();
   const res=await fetch('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','Dropbox-API-Arg':dbxArg({path:DBX_FILE,mode:'overwrite',mute:true})},body:buf});
-  if(!res.ok){let d=null;try{d=await res.json();}catch(e){}throw new Error('上傳失敗 '+((d&&d.error_summary)||res.status));}
+  if(!res.ok){
+    let detail='';
+    try{const d=await res.json();detail=(d&&(d.error_summary||(d.error&&(d.error['.tag']||JSON.stringify(d.error)))))||'';}catch(e){try{detail=(await res.text()).slice(0,160);}catch(e2){detail='';}}
+    throw new Error('上傳失敗 '+res.status+(detail?(' · '+detail):''));
+  }
   return res.json();
 }
 async function dbxStartAuth(){
