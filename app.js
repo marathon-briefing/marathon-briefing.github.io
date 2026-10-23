@@ -422,7 +422,8 @@ function dbxClearTokens(){try{localStorage.removeItem(DBX_LS);}catch(e){}}
 function dbxIsLinked(){const t=dbxTokens();return !!(t&&t.refresh_token);}
 function dbxLastSync(){try{const t=dbxTokens();return t&&t.lastSyncAt?t.lastSyncAt:'';}catch(e){return '';}}
 function dbxQ(params){return Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('&');}
-function dbxArg(obj){let j='{}';try{j=JSON.stringify(obj);}catch(e){}const a=j.replace(/[\u0080-\uffff]/g,function(c){return '\\u'+('000'+c.charCodeAt(0).toString(16)).slice(-4);});try{return btoa(a);}catch(e){return a;}}
+function dbxArgRaw(obj){let j='{}';try{j=JSON.stringify(obj);}catch(e){}return j.replace(/[\u0080-\uffff]/g,function(c){return '\\u'+('000'+c.charCodeAt(0).toString(16)).slice(-4);});}
+function dbxArg(obj){let j='{}';try{j=JSON.stringify(obj);}catch(e){}const a=dbxArgRaw(obj);try{return btoa(a);}catch(e){return a;}}
 async function dbxFetch(url,opts){
   const res=await fetch(url,opts);
   const text=await res.text();
@@ -449,27 +450,33 @@ async function dbxRefresh(){
 }
 async function dbxDownload(){
   const token=await dbxRefresh();
-  const res=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{'Authorization':'Bearer '+token,'Dropbox-API-Arg':dbxArg({path:DBX_FILE})}});
-  if(res.status===409){
-    try{const d=await res.json();if(d&&d.error&&d.error['.tag']==='path')return null;}catch(e){}
-    throw new Error('讀取雲端檔失敗 HTTP 409');
-  }
-  if(!res.ok){
+  const args=[dbxArg({path:DBX_FILE}),dbxArgRaw({path:DBX_FILE})];
+  let lastErr=null;
+  for(const a of args){
+    const res=await fetch('https://content.dropboxapi.com/2/files/download',{method:'POST',headers:{'Authorization':'Bearer '+token,'Dropbox-API-Arg':a}});
+    if(res.status===200)return res.arrayBuffer();
+    if(res.status===409){
+      try{const d=await res.json();if(d&&d.error&&d.error['.tag']==='path')return null;}catch(e){}
+      throw new Error('讀取雲端檔失敗 HTTP 409');
+    }
     let detail='';
     try{const d=await res.json();detail=(d&&(d.error_summary||(d.error&&(d.error['.tag']||JSON.stringify(d.error)))))||'';}catch(e){try{detail=(await res.text()).slice(0,160);}catch(e2){detail='';}}
-    throw new Error('下載失敗 '+res.status+(detail?(' · '+detail):''));
+    lastErr=new Error('下載失敗 '+res.status+(detail?(' · '+detail):''));
   }
-  return res.arrayBuffer();
+  throw lastErr;
 }
 async function dbxUpload(buf){
   const token=await dbxRefresh();
-  const res=await fetch('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','Dropbox-API-Arg':dbxArg({path:DBX_FILE,mode:'overwrite',mute:true})},body:buf});
-  if(!res.ok){
+  const args=[dbxArg({path:DBX_FILE,mode:'overwrite',mute:true}),dbxArgRaw({path:DBX_FILE,mode:'overwrite',mute:true})];
+  let lastErr=null;
+  for(const a of args){
+    const res=await fetch('https://content.dropboxapi.com/2/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','Dropbox-API-Arg':a},body:buf});
+    if(res.ok)return res.json();
     let detail='';
     try{const d=await res.json();detail=(d&&(d.error_summary||(d.error&&(d.error['.tag']||JSON.stringify(d.error)))))||'';}catch(e){try{detail=(await res.text()).slice(0,160);}catch(e2){detail='';}}
-    throw new Error('上傳失敗 '+res.status+(detail?(' · '+detail):''));
+    lastErr=new Error('上傳失敗 '+res.status+(detail?(' · '+detail):''));
   }
-  return res.json();
+  throw lastErr;
 }
 async function dbxStartAuth(){
   if(typeof crypto==='undefined'||!crypto.subtle){toast('此瀏覽器不支援加密，無法連結 Dropbox');return;}
@@ -597,7 +604,8 @@ async function dbxSync(force){
   dbxBusy=true;
   try{
     let cloudBuf=null;
-    try{cloudBuf=await dbxDownload();}catch(e){const m='下載雲端檔失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast('同步失敗：'+e.message);refreshDbxUI();return;}
+    try{cloudBuf=await dbxDownload();}
+    catch(e){dbxSetErr('下載雲端檔失敗（已繼續上傳）：'+e.message);}
     let cloudRecords=[],cloudSet=null;
     try{
       if(cloudBuf){const parsed=dbxParseWb(cloudBuf);cloudRecords=parsed.records;cloudSet=parsed;}
