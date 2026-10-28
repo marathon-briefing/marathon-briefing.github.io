@@ -25,9 +25,10 @@ const QUICK_OUT=[100,200,500,1000,2000];
 /* ============ 狀態與儲存 ============ */
 let state=load();
 if(!state){
-  state={platforms:DEFAULT_PLATFORMS.map(x=>({...x})),incomeCats:DEFAULT_INCOME_CATS.map(x=>({...x})),expenseCats:DEFAULT_EXPENSE_CATS.map(x=>({...x})),payMethods:[...PAY_METHODS],records:[]};
+  state={platforms:DEFAULT_PLATFORMS.map(x=>({...x})),incomeCats:DEFAULT_INCOME_CATS.map(x=>({...x})),expenseCats:DEFAULT_EXPENSE_CATS.map(x=>({...x})),payMethods:[...PAY_METHODS],records:[],deletedIds:[]};
   save();
 }
+if(!Array.isArray(state.deletedIds))state.deletedIds=[];
 function load(){try{const raw=localStorage.getItem(LS_KEY);return raw?JSON.parse(raw):null;}catch(e){return null;}}
 function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(state));}catch(e){toast('儲存失敗：瀏覽器空間不足');}}
 const PLATFORM_ORDER=['uber','yoxi','taxigo','bolt','taiwan','linego','metro','direct','other'];
@@ -92,7 +93,7 @@ function renderHome(){
   const yOut=state.records.filter(r=>r.type==='out'&&r.date.slice(0,4)===''+y);
   const sum=a=>a.reduce((s,r)=>s+r.amount,0);
   $('#hero-today').textContent=money(sum(todayIn));
-  $('#hero-note').textContent=todayIn.length?('共 '+todayIn.length+' 筆收入'):'今天還沒有收入紀錄';
+  $('#hero-note').textContent=todayIn.length?('共 '+todayIn.length+' 筆收入紀錄'):'今天還沒有收入紀錄';
   const plats={};
   todayIn.forEach(r=>{const p=recPlatform(r);const k=p?p.name:'其他';plats[k]=(plats[k]||0)+r.amount;});
   const ph=$('#hero-plats');ph.innerHTML='';
@@ -194,7 +195,9 @@ function delRecord(){
   const r=state.records.find(x=>x.id===editId);if(!r)return;
   if(!confirm('確定刪除這筆紀錄？刪除後無法復原。'))return;
   state.records=state.records.filter(x=>x.id!==editId);
-  save();toast('已刪除');editId=null;goView('records');
+  if(state.deletedIds.indexOf(editId)<0)state.deletedIds.push(editId);
+  if(state.deletedIds.length>500)state.deletedIds=state.deletedIds.slice(-500);
+  save();toast('已刪除，同步後雲端也會一併移除');editId=null;goView('records');
   try{if(dbxIsLinked())setTimeout(function(){dbxSync(false);},600);}catch(e){}
 }
 
@@ -525,6 +528,9 @@ function dbxBuildWb(){
   state.expenseCats.forEach(function(x){set.push(['支出',x.id,x.name]);});
   state.payMethods.forEach(function(x){set.push(['支付',x,x]);});
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(set),'設定');
+  const del=[['系統ID','刪除時間']];
+  (state.deletedIds||[]).forEach(function(id){del.push([id,new Date().toISOString()]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(del),'刪除');
   return XLSX.write(wb,{bookType:'xlsx',type:'array'});
 }
 function dbxParseWb(buf){
@@ -557,7 +563,15 @@ function dbxParseWb(buf){
     if(cat.expense.length)expenseCats=cat.expense;
     if(pm.length)payMethods=pm;
   }
-  return {records:out,platforms:platforms,incomeCats:incomeCats,expenseCats:expenseCats,payMethods:payMethods};
+  let deletedIds=null;
+  const ws3=wb.Sheets['刪除'];
+  if(ws3){
+    const drows=XLSX.utils.sheet_to_json(ws3,{header:1,defval:''});
+    const ids=[];
+    for(let i=1;i<drows.length;i++){if(drows[i]&&drows[i][0])ids.push(String(drows[i][0]));}
+    if(ids.length)deletedIds=ids;
+  }
+  return {records:out,platforms:platforms,incomeCats:incomeCats,expenseCats:expenseCats,payMethods:payMethods,deletedIds:deletedIds};
 }
 function dbxMergeLists(custom,def){
   const ids={};custom.forEach(function(x){ids[x.id]=1;});
@@ -583,10 +597,12 @@ function dbxMapPlatforms(){
     if(p)r.platformId=p.id;
   });
 }
-function dbxMergeRecords(localArr,cloudArr){
+function dbxMergeRecords(localArr,cloudArr,deletedIds){
+  deletedIds=deletedIds||[];
   const map={};
   localArr.forEach(function(r){const k=r.id||(r.createdAt+'_'+r.amount+'_'+r.date);map[k]=r;});
   cloudArr.forEach(function(r){
+    if(deletedIds.indexOf(r.id)>=0)return;
     const k=r.id||(r.createdAt+'_'+r.amount+'_'+r.date);
     const ex=map[k];
     if(!ex){map[k]=r;}
@@ -611,7 +627,10 @@ async function dbxSync(force){
     try{
       if(cloudBuf){const parsed=dbxParseWb(cloudBuf);cloudRecords=parsed.records;cloudSet=parsed;}
     }catch(e){const m='讀取雲端 Excel 失敗：'+e.message;dbxSetErr(m);dbxBusy=false;toast('同步失敗：'+e.message);return;}
-    const merged=dbxMergeRecords(state.records,cloudRecords);
+    if(cloudSet&&Array.isArray(cloudSet.deletedIds)){
+      cloudSet.deletedIds.forEach(function(id){if(state.deletedIds.indexOf(id)<0)state.deletedIds.push(id);});
+    }
+    const merged=dbxMergeRecords(state.records,cloudRecords,state.deletedIds);
     const changed=merged.length!==state.records.length;
     if(changed||force){
       state.records=merged;
